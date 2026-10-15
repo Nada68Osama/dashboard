@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: rgba(12,18,32,.88);
+    --bd: rgba(255,255,255,.13);
+    --tx: #eef2ff;
+    --mut: #9aa6c4;
+    --blue: #3b5bdb;
+    --gold: #fbbf24;
+    --acc: #60a5fa;
+    --rows: 3;                      /* عدد الشيتات الظاهرة في الـtimeline (الباقي بالسكرول) */
+    --rowh: 34px;                   /* ارتفاع الصف الواحد */
+    --tlbg: var(--bg);              /* نفس لون البوكس اللي على اليمين. للشفافية جرّبي مثلًا rgba(10,16,30,.4) */
+    --boxbg: rgba(14,22,48,.35);    /* شفافية بوكس جدول الـexits — قلّلي الرقم الأخير = أشفّ */
+    --tlh: 240px;                   /* بيتظبط أوتوماتيك من الـJS */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0b1020;font-family:'Cairo','Segoe UI',Tahoma,sans-serif;color:var(--tx);overflow:hidden}
+  #map{position:absolute;inset:0;background:#0b1020}
+  .glass{background:var(--bg);border:1px solid var(--bd);border-radius:16px;
+         backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .ui{position:absolute;z-index:1000}
+  button{font-family:inherit}
+
+  /* title */
+  #title{top:14px;left:14px;padding:10px 16px;display:flex;gap:12px;align-items:center;max-width:330px}
+  #title .logo{font-size:26px}
+  #title h1{margin:0;font-size:17px;font-weight:700;line-height:1.15}
+  #title small{color:var(--mut);font-size:12px}
+  .leaflet-top.leaflet-left{top:76px}
+
+  /* language + map style */
+  #lang{top:14px;right:14px;padding:4px;display:flex;gap:4px}
+  #lang button,#maps button{border:0;background:transparent;color:var(--mut);font:600 12.5px 'Cairo',sans-serif;
+               padding:6px 12px;border-radius:12px;cursor:pointer;white-space:nowrap}
+  #lang button.on,#maps button.on{background:var(--blue);color:#fff}
+  #maps{top:14px;right:112px;padding:4px;display:flex;gap:2px}
+  #maps button:hover:not(.on),#lang button:hover:not(.on){color:#fff}
+
+  /* right panel */
+  #side{top:68px;right:14px;width:300px;padding:14px 14px 10px;max-height:calc(100% - var(--tlh) - 82px);overflow:auto}
+  #side h2{margin:0 0 10px;font-size:12px;font-weight:700;color:var(--mut);letter-spacing:.05em;text-transform:uppercase}
+  .row{margin-bottom:10px;cursor:pointer;border-radius:10px;padding:5px 7px;margin-left:-7px;margin-right:-7px}
+  .row:hover{background:rgba(255,255,255,.07)}
+  .row .top{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;font-weight:600;margin-bottom:4px}
+  .row .top .n{font-variant-numeric:tabular-nums}
+  .bar{height:8px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:6px;transition:width .5s ease, background .5s ease}
+  .hint{font-size:11.5px;color:var(--mut);margin-top:2px}
+  .legend{margin-top:8px;padding-top:10px;border-top:1px solid var(--bd);display:grid;gap:7px;font-size:12px;color:var(--mut)}
+  .legend div{display:flex;align-items:center;gap:9px}
+  .sw-a{width:26px;height:4px;border-radius:3px;background:var(--blue)}
+  .sw-e{width:26px;height:0;border-top:4px dotted var(--gold)}
+  .sw-c{width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #1e3a8a;margin:0 8px}
+
+  .back{border:1px solid var(--bd);background:rgba(255,255,255,.07);color:var(--tx);font:600 12px 'Cairo',sans-serif;
+        padding:5px 12px;border-radius:999px;cursor:pointer;margin-bottom:10px}
+  .back:hover{background:rgba(255,255,255,.16)}
+  .dname{font-size:17px;font-weight:700;line-height:1.2}
+  .big{display:flex;align-items:baseline;gap:7px;margin:6px 0 10px}
+  .big b{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--gold);line-height:1}
+  .big span{color:var(--mut);font-size:13px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .stat{background:rgba(255,255,255,.06);border-radius:10px;padding:7px 10px}
+  .stat small{display:block;color:var(--mut);font-size:11px}
+  .stat b{font-size:15px;font-variant-numeric:tabular-nums}
+  .ex-head{display:grid;grid-template-columns:1fr 78px 96px;gap:6px;font-size:10px;color:var(--mut);font-family:Consolas,Menlo,monospace;
+           margin:4px 0 6px;text-align:right}
+  .ex-head span:first-child{text-align:left}
+  [dir=rtl] .ex-head{text-align:left}[dir=rtl] .ex-head span:first-child{text-align:right}
+  .ex{margin-bottom:9px}
+  .ex .l{display:grid;grid-template-columns:1fr 78px 96px;gap:6px;font-size:13px;font-weight:600;align-items:baseline}
+  .ex .l .p,.ex .l .v{text-align:right;font-variant-numeric:tabular-nums}
+  [dir=rtl] .ex .l .p,[dir=rtl] .ex .l .v{text-align:left}
+  .ex .l .p{color:var(--gold)}
+  .ex.off{opacity:.45}
+  .ex .bar{margin-top:3px;height:7px}
+  .note{font-size:12px;color:var(--mut);background:rgba(255,255,255,.05);border-radius:10px;padding:8px 10px}
+
+  /* timeline dock */
+  #tl{left:14px;right:14px;bottom:22px;padding:12px 14px 10px 16px;border-radius:20px;z-index:1100;
+      display:flex;flex-direction:column;overflow:hidden;background:var(--tlbg)}
+  .tl-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;flex:none}
+  .when{direction:ltr;unicode-bidi:isolate;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;min-width:96px}
+  .when small{font-size:11px;font-weight:400;color:var(--mut);margin-inline-start:6px}
+  .chip{border:1px solid var(--bd);background:rgba(255,255,255,.05);color:var(--tx);padding:4px 11px;border-radius:999px;
+        font:600 12px 'Cairo',sans-serif;cursor:pointer;white-space:nowrap}
+  .chip:hover{background:rgba(255,255,255,.14)}
+  .chip.on{background:var(--acc);color:#0b1020;border-color:transparent}
+  .chip.live{background:var(--blue);border-color:transparent;color:#fff}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:rgba(251,191,36,.16);border:1px solid rgba(251,191,36,.5);
+        color:var(--gold);border-radius:999px;padding:3px 6px 3px 11px;font:600 12px 'Cairo',sans-serif}
+  .pill button{border:0;background:rgba(255,255,255,.14);color:#fff;width:18px;height:18px;border-radius:50%;cursor:pointer;line-height:1;font-size:11px}
+  .sw{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--bd);background:rgba(255,255,255,.05);color:var(--mut);
+      padding:3px 11px 3px 6px;border-radius:999px;font:600 12px 'Cairo',sans-serif;cursor:pointer;white-space:nowrap}
+  .sw:hover{background:rgba(255,255,255,.12)}
+  .sw i{width:26px;height:15px;border-radius:999px;background:rgba(255,255,255,.2);position:relative;transition:background .2s;flex:none}
+  .sw i::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .2s}
+  .sw.on{color:var(--tx)}
+  .sw.on i{background:var(--acc)}
+  .sw.on i::after{transform:translateX(11px)}
+  .grow{flex:1}
+  .grp{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut)}
+  .lg{display:flex;gap:12px;align-items:center;font-size:11.5px;color:var(--mut)}
+  .lg i{display:inline-block;width:14px;height:10px;border-radius:3px;margin-inline-end:5px;vertical-align:-1px}
+  .lg .y{background:#fbbf24}.lg .g{background:#5b6578}
+  .lg .h{background:repeating-linear-gradient(135deg,rgba(255,255,255,.3) 0 2px,transparent 2px 4px);border:1px solid rgba(255,255,255,.18)}
+
+  .tl-axisrow,.tl-grid{display:grid;grid-template-columns:178px 1fr;column-gap:10px;direction:ltr}
+  .tl-axisrow{flex:none;margin-bottom:4px}
+  .tl-grid{row-gap:4px;align-items:center;position:relative}
+  .tl-scroll{flex:none;height:calc(var(--rows)*var(--rowh) + (var(--rows) - 1)*4px);overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;position:relative;
+             padding-right:2px}
+  .tl-scroll::-webkit-scrollbar{width:10px}
+  .tl-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,.06);border-radius:10px}
+  .tl-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.38);border-radius:10px;border:2px solid transparent;background-clip:padding-box}
+  .tl-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.6);background-clip:padding-box}
+  @supports (-moz-appearance:none){ .tl-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.4) rgba(255,255,255,.06)} }
+  .axmark{position:absolute;top:0;bottom:-4px;width:0;border-left:2px solid #fff;pointer-events:none;
+          box-shadow:0 0 6px rgba(255,255,255,.7);transition:left .35s ease;z-index:3}
+  .tl-name{font-size:12.5px;font-weight:700;line-height:1.15;cursor:pointer;height:var(--rowh);display:flex;flex-direction:column;justify-content:center;padding:0 8px;border-radius:8px;border-left:3px solid transparent;overflow:hidden}
+  .tl-name:hover{background:rgba(255,255,255,.07)}
+  .tl-name small{display:block;font-weight:400;color:var(--mut);font-size:10.5px;white-space:nowrap}
+  .tl-name.act{border-left-color:var(--acc);background:rgba(96,165,250,.10)}
+  .tl-name.cur{border-left-color:var(--gold);background:rgba(251,191,36,.08)}
+  .tl-axis{position:relative;height:16px;font-size:10.5px;color:var(--mut)}
+  .tl-axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+  .tl-axis .tick{top:0}
+  .tl-axis .brk{color:#cbd5e1;font-weight:700;letter-spacing:2px}
+  .tl-track{position:relative;height:26px;border-radius:7px;cursor:pointer;
+     background:repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 5px,transparent 5px 10px);
+     border:1px solid rgba(255,255,255,.07)}
+  .cell{position:absolute;top:3px;bottom:3px;border-radius:3px;transition:filter .15s}
+  .cell.y{background:#fbbf24}.cell.g{background:#5b6578}.cell.na{background:rgba(255,255,255,.16)}
+  .cell:hover{filter:brightness(1.25)}
+  .cell.sel{outline:2px solid #fff;outline-offset:1px;z-index:3}
+  .cut{position:absolute;top:0;bottom:0;background:rgba(6,10,22,.45);z-index:1;border-left:1px dashed rgba(255,255,255,.18);border-right:1px dashed rgba(255,255,255,.18)}
+  #play{position:absolute;top:0;bottom:0;width:0;border-left:2px solid #fff;z-index:5;pointer-events:none;
+        box-shadow:0 0 8px rgba(255,255,255,.7);transition:left .35s ease}
+  #playwrap{position:absolute;pointer-events:none;overflow:visible}
+  #tip{position:fixed;z-index:3000;pointer-events:none;background:#0b1020;border:1px solid var(--bd);border-radius:9px;padding:5px 9px;
+       font-size:12px;display:none;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+
+  /* map labels */
+  .lblwrap{position:relative}
+  .lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;cursor:pointer;
+       background:rgba(14,22,48,.93);border:1px solid rgba(96,130,255,.7);border-radius:9px;padding:5px 10px;
+       box-shadow:0 4px 14px rgba(0,0,0,.45);color:#fff;font-family:'Cairo','Segoe UI',sans-serif}
+  .lbl:hover{border-color:#fff}
+  .lbl.sel{border-color:var(--gold);box-shadow:0 0 0 2px rgba(251,191,36,.5),0 4px 14px rgba(0,0,0,.45)}
+  .lbl b{display:block;font-size:12.5px;font-weight:700;line-height:1.25}
+  .lbl .cnt{display:inline-block;margin-top:3px;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#0b1020}
+  .lbl.sel{min-width:320px;padding:7px 12px 9px;cursor:pointer;background:var(--boxbg);
+           backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);text-shadow:0 1px 3px rgba(0,0,0,.95)}
+  .lbl.sel.cmp{min-width:0}
+  .lbl .cnt i{font-style:normal;font-weight:600;opacity:.7;margin-inline-end:3px}
+  .lbl .tbl{margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.18);display:grid;grid-template-columns:auto auto auto auto;
+            column-gap:14px;row-gap:3px;text-align:start;font-size:12px;font-variant-numeric:tabular-nums}
+  .lbl .tbl .th{color:#9db0d9;font-size:10px;letter-spacing:.02em;font-family:Consolas,Menlo,monospace}
+  .lbl .tbl .p{color:#fbbf24;font-weight:700;text-align:end}
+  .lbl .tbl>span{white-space:nowrap}
+  .lbl .tbl .v{font-weight:600;text-align:end}
+  .lbl .tbl .th.e{text-align:end}
+  .lbl .tbl .off{opacity:.45}
+  .lbl .tnote{margin-top:6px;font-size:11px;color:#9db0d9}
+  .lbl .thint{margin-top:6px;font-size:10.5px;color:#cfe0ff;opacity:.85}
+  .elbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;pointer-events:none;
+        background:rgba(40,28,4,.88);border:1px solid rgba(251,191,36,.85);border-radius:9px;padding:3px 9px;color:#fff;
+        box-shadow:0 4px 14px rgba(0,0,0,.5);font-family:'Cairo','Segoe UI',sans-serif}
+  .elbl small{display:block;font-size:11.5px;font-weight:700;color:#fff;line-height:1.2;margin-bottom:1px}
+  .elbl b{font-size:14px;color:var(--gold);font-variant-numeric:tabular-nums}
+  .elbl span{font-size:11.5px;margin-inline-start:6px;font-variant-numeric:tabular-nums}
+  .leaflet-container{font-family:'Cairo','Segoe UI',sans-serif}
+  .leaflet-control-attribution{background:rgba(12,18,32,.75)!important;color:#9aa6c4!important}
+  .leaflet-control-attribution a{color:#9db0d9!important}
+  .leaflet-bar a{background:var(--bg)!important;color:#fff!important;border-color:var(--bd)!important}
+
+  @media (max-width:980px){ #maps{top:64px;right:14px} #side{top:112px} }
+  @media (max-width:720px){ #side{display:none} .tl-grid,.tl-axisrow{grid-template-columns:110px 1fr} }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="title" class="ui glass">
+  <div class="logo">🚦</div>
+  <div><h1 id="tTitle"></h1><small id="tSub"></small></div>
+</div>
+
+<div id="maps" class="ui glass"></div>
+<div id="lang" class="ui glass">
+  <button id="bEn" class="on">EN</button>
+  <button id="bAr">عربي</button>
+</div>
+
+<div id="side" class="ui glass"></div>
+
+<div id="tl" class="ui glass">
+  <div class="tl-h">
+    <div class="when" id="when"></div>
+    <button class="chip live" id="mode"></button>
+    <span id="apill"></span>
+    <div class="grp" id="tgl"></div>
+    <div class="grow"></div>
+    <div class="lg" id="lg"></div>
+    <div class="grp"><span id="tSpeed"></span><span id="spChips" class="grp"></span></div>
+  </div>
+  <div class="tl-axisrow" id="axrow"><div></div><div class="tl-axis" id="axis"></div></div>
+  <div class="tl-scroll" id="scroll"><div class="tl-grid" id="grid"></div></div>
+</div>
+<div id="tip"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const D = __DATA__;
+const F = D.files;
+const DIV = D.carsDiv || 30;
+
+/* ---------------- i18n ---------------- */
+const I18N = {
+  en:{title:'Junction Live View', hintAll:'Click an approach on the map to see its exits',
+      approaches:'Approaches', exits:'Exits', exit:'exitName', back:'← All approaches', vph:'veh/h', vol:'vol', appN:'approachName',
+      ratio:'ratioPercent', volExit:'volumePerExit', tt:'Travel time', ff:'free-flow', delay:'Delay', s:'s',
+      noTurn:'No exit data at this time', legA:'Approach', legE:'Exit', dot:'1 dot =',
+      playing:'⏸ Playing all time', pinned:'▶ Play all time', pinnedAt:'Pinned time',
+      yes:'Cars passed', no:'No cars', nodata:'No data', speed:'Speed', total:'Total',
+      sat:'Satellite', osm:'Street (OSM)',
+      range:'Whole period', clickTip:'Click a time to pin it · click the name to play it all',
+      together:'Overlapping sheets', boxsw:'Info box', exsw:'Exit labels', sheets:'sheets',
+      exHint:'Click the box to label the exits on the map', exOn:'Exit labels are on the map · click to hide'},
+  ar:{title:'عرض التقاطع المباشر', hintAll:'اضغطي على approach في الخريطة عشان تشوفي الـexits بتاعته',
+      approaches:'اتجاهات الدخول', exits:'اتجاهات الخروج', exit:'exitName', back:'← كل الاتجاهات', vph:'عربية/ساعة', vol:'vol', appN:'approachName',
+      ratio:'ratioPercent', volExit:'volumePerExit', tt:'زمن الرحلة', ff:'بدون زحمة', delay:'التأخير', s:'ث',
+      noTurn:'مفيش بيانات خروج في الوقت ده', legA:'اتجاه الدخول', legE:'اتجاه الخروج', dot:'كل نقطة =',
+      playing:'⏸ شغّال على كل الوقت', pinned:'▶ شغّلي كل الوقت', pinnedAt:'وقت مثبّت',
+      yes:'فيه عربيات', no:'مفيش عربيات', nodata:'مفيش داتا', speed:'السرعة', total:'الإجمالي',
+      sat:'قمر صناعي', osm:'شوارع (OSM)',
+      range:'الفترة كلها', clickTip:'اضغطي على وقت لتثبيته · اضغطي على الاسم لتشغيل كل الوقت',
+      together:'الشيتات المتزامنة', boxsw:'البوكس', exsw:'أسماء الخروج', sheets:'شيتات',
+      exHint:'اضغطي على البوكس عشان تظهر أسماء الـexits على الخريطة', exOn:'أسماء الـexits ظاهرة على الخريطة · اضغطي للإخفاء'}
+};
+let lang = 'en';
+const t = k => I18N[lang][k];
+const nm = o => lang==='ar' ? o.name_ar : o.name_en;
+
+/* ---------------- time helpers ---------------- */
+const pad=n=>String(n).padStart(2,'0');
+const hms=ms=>{const d=new Date(ms);return pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds())};
+const hm =ms=>{const d=new Date(ms);return pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())};
+const dmy=ms=>new Date(ms).toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
+const $ = id => document.getElementById(id);
+
+/* ---------------- prepare data ---------------- */
+F.forEach(f=>{
+  f.n = f.times.length;
+  // duration (sec) each reading covers: min of gap to previous / next
+  f.dur = f.times.map((tm,i)=>{
+    const nx = i<f.n-1 ? (f.times[i+1]-tm)/1000 : null, pv = i>0 ? (tm-f.times[i-1])/1000 : null;
+    const c=[nx,pv].filter(x=>x!=null); return c.length ? Math.min(...c) : 300;
+  });
+  f.aById = {}; f.approaches.forEach(a=>f.aById[a.id]=a);
+  f.jkey = f.junction+'|'+f.approaches.map(a=>a.id).join(',');   // نفس التقاطع = نفس المفتاح
+  f.exByA = {};
+  f.exits.forEach(e=>{ (f.exByA[e.aid] = f.exByA[e.aid]||[]).push(e); });
+  // number exits that share a name inside one approach
+  Object.values(f.exByA).forEach(list=>{
+    ['name_en','name_ar'].forEach(k=>{
+      const cnt={}; list.forEach(e=>cnt[e[k]]=(cnt[e[k]]||0)+1);
+      const seen={}; list.forEach(e=>{ if(cnt[e[k]]>1){ seen[e[k]]=(seen[e[k]]||0)+1; e['d_'+k]=e[k]+' #'+seen[e[k]]; } else e['d_'+k]=e[k]; });
+    });
+  });
+});
+F.forEach(f=>{
+  f.approaches.forEach(a=>{ a.raw = a.raw || a.name_en; a.vol = a.vph.map(()=>null); });
+  f.exits.forEach(e=>{
+    e.raw = e.raw || e.name_en;
+    const a=f.aById[e.aid]; if(!a) return;
+    e.vol.forEach((v,i)=>{ if(v!=null) a.vol[i]=(a.vol[i]||0)+v; });
+  });
+});
+const fmtR = v => v==null ? '–' : String(Math.round(v*10)/10);
+const exName = e => lang==='ar' ? e.d_name_ar : e.d_name_en;
+
+/* ---------------- state ---------------- */
+let sel = {f:0, i:0};
+let selA = null;            // selected approach id (null = all)
+let selFi = null;           // index of the file that selected approach belongs to
+const SW = {tog:true, box:true, ex:false};   // switches: overlapping sheets / info box / exit labels
+let ACT = new Map([[0,0]]); // active files at the current time: fileIndex -> reading index
+let playing = true;         // default: run through the whole period
+let speed = 1, timer = null;
+let mapStyle = 'sat';
+const cur = () => F[sel.f];
+
+/* ---------------- map ---------------- */
+const map = L.map('map',{zoomControl:false,preferCanvas:true,zoomSnap:.25,maxZoom:19});
+L.control.zoom({position:'topleft'}).addTo(map);
+const STYLES = {
+  sat : {url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opt:{maxNativeZoom:18,maxZoom:19,attribution:'Tiles © Esri, Maxar, Earthstar Geographics'}},
+  osm : {url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', opt:{maxNativeZoom:19,maxZoom:19,attribution:'© OpenStreetMap contributors'}}
+};
+let baseLayer = null;
+function setStyle(k){
+  mapStyle=k;
+  if(baseLayer) map.removeLayer(baseLayer);
+  baseLayer = L.tileLayer(STYLES[k].url, STYLES[k].opt).addTo(map);
+  baseLayer.bringToBack();
+  buildMapChips();
+}
+function buildMapChips(){
+  $('maps').innerHTML = Object.keys(STYLES).map(k=>`<button class="${k===mapStyle?'on':''}" data-k="${k}">${t(k)}</button>`).join('');
+  $('maps').querySelectorAll('button').forEach(b=>b.onclick=()=>setStyle(b.dataset.k));
+}
+
+/* ---------------- geometry helpers ---------------- */
+function prep(o){
+  const lat0=o.coords[0][0]*Math.PI/180, kx=Math.cos(lat0);
+  o.cum=[0];
+  for(let i=1;i<o.coords.length;i++){
+    const dx=(o.coords[i][1]-o.coords[i-1][1])*kx, dy=o.coords[i][0]-o.coords[i-1][0];
+    o.cum.push(o.cum[i-1]+Math.hypot(dx,dy));
+  }
+  o.len=o.cum[o.cum.length-1]||1e-9; o.phase=Math.random(); o.cars=[]; o.period=12;
+}
+function pointAt(o,u){
+  if(o.coords.length<2) return o.coords[0];
+  const d=u*o.len; let i=1;
+  while(i<o.cum.length-1 && o.cum[i]<d) i++;
+  const s=o.cum[i]-o.cum[i-1]||1e-12, f=(d-o.cum[i-1])/s;
+  return [o.coords[i-1][0]+(o.coords[i][0]-o.coords[i-1][0])*f, o.coords[i-1][1]+(o.coords[i][1]-o.coords[i-1][1])*f];
+}
+
+/* ---------------- build junction layers ---------------- */
+const LAY = new Map();      // fileIndex -> {fi, AP, EX, bounds}  (كل شيت ليه طبقاته على نفس الماب)
+function dropJunction(fi){
+  const ly=LAY.get(fi); if(!ly) return;
+  [...ly.AP,...ly.EX].forEach(o=>{
+    [o.casing,o.line,o.hit,o.marker].forEach(l=>l&&map.removeLayer(l));
+    o.cars.forEach(c=>c.m.remove());
+  });
+  LAY.delete(fi);
+}
+function buildJunction(fi){
+  const f=F[fi], ly={fi,AP:[],EX:[],bounds:null};
+  LAY.set(fi,ly);
+  const ends=f.approaches.map(a=>a.coords[a.coords.length-1]);
+  const cen=[ends.reduce((p,c)=>p+c[0],0)/ends.length, ends.reduce((p,c)=>p+c[1],0)/ends.length];
+  // exits (unique geometry) first so approaches sit on top
+  const seen=new Set();
+  f.exits.forEach(e=>{
+    if(seen.has(e.eid) || !e.coords.length) return; seen.add(e.eid);
+    const o={eid:e.eid, coords:e.coords}; prep(o);
+    o.casing=L.polyline(o.coords,{color:'#3a2a00',weight:9,opacity:.55,lineCap:'round',interactive:false}).addTo(map);
+    o.line=L.polyline(o.coords,{color:'#fbbf24',weight:6,opacity:1,dashArray:'1 11',lineCap:'round',interactive:false}).addTo(map);
+    const ep=pointAt(o,1), edx=(ep[1]-cen[1])*Math.cos(cen[0]*Math.PI/180), edy=-(ep[0]-cen[0]), em=Math.hypot(edx,edy)||1;
+    o.off=[edx/em*62, edy/em*44];
+    o.marker=L.marker(ep,{icon:L.divIcon({className:'',html:'',iconSize:[0,0]}),interactive:false,zIndexOffset:1500});
+    ly.EX.push(o);
+  });
+  f.approaches.forEach(a=>{
+    const o={id:a.id, coords:a.coords}; prep(o);
+    o.casing=L.polyline(o.coords,{color:'#0b1b52',weight:9,opacity:.6,lineCap:'round',lineJoin:'round',interactive:false}).addTo(map);
+    o.line=L.polyline(o.coords,{color:'#3b5bdb',weight:5.5,opacity:1,lineCap:'round',lineJoin:'round',interactive:false}).addTo(map);
+    o.hit=L.polyline(o.coords,{color:'#000',weight:26,opacity:.01,bubblingMouseEvents:false}).addTo(map);
+    o.hit.on('click',()=>selectApproach(o.id,fi));
+    o.labelPos=pointAt(o,.14);
+    const dx=(o.labelPos[1]-cen[1])*Math.cos(cen[0]*Math.PI/180), dy=-(o.labelPos[0]-cen[0]), m=Math.hypot(dx,dy)||1;
+    o.off=[dx/m*70, dy/m*46];
+    o.marker=L.marker(o.labelPos,{icon:L.divIcon({className:'',html:'',iconSize:[0,0]}),bubblingMouseEvents:false,zIndexOffset:1000}).addTo(map);
+    // لو الاتجاه ده متعلّم بالفعل: الضغط على البوكس بتاعه بيظهر/يخفي أسماء الـexits على الخريطة
+    o.marker.on('click',()=>{
+      if(selA===o.id && selFi===fi){ SW.ex=!SW.ex; togs(); render(); }
+      else selectApproach(o.id,fi);
+    });
+    ly.AP.push(o);
+  });
+  const pts=[]; f.approaches.forEach(a=>a.coords.forEach(c=>pts.push(c))); f.exits.forEach(e=>e.coords.forEach(c=>pts.push(c)));
+  ly.bounds=L.latLngBounds(pts);
+}
+function relayout(){
+  const bs=[...LAY.values()].map(l=>l.bounds).filter(Boolean);
+  if(!bs.length){ map.__bounds=null; return null; }
+  const u=L.latLngBounds(bs[0].getSouthWest(),bs[0].getNorthEast());
+  bs.slice(1).forEach(b=>u.extend(b));
+  map.__bounds=u; return u;
+}
+// يبني/يشيل طبقات الشيتات حسب اللي شغال في الوقت الحالي (كلهم على نفس الماب)
+function syncLayers(act){
+  const want=new Set(act.map(a=>a.fi)), wasEmpty=LAY.size===0;
+  let removed=false, addedB=null;
+  [...LAY.keys()].forEach(fi=>{ if(!want.has(fi)){ dropJunction(fi); removed=true; } });
+  act.forEach(a=>{
+    if(LAY.has(a.fi)) return;
+    buildJunction(a.fi);
+    const b=LAY.get(a.fi).bounds; addedB = addedB ? addedB.extend(b) : L.latLngBounds(b.getSouthWest(),b.getNorthEast());
+  });
+  if(addedB||removed){
+    relayout();
+    if(wasEmpty) fit(false);
+    else if(addedB && !map.getBounds().contains(addedB)) fit(true);   // شيت جديد ظهر برّه الشاشة → كبّري/وسّعي عشان يبان
+  }
+}
+function fit(anim){
+  if(!map.__bounds) return;
+  map.invalidateSize();
+  // مساحة أمان: الليبلات بتطلع بره الخطوط، والبوكس عايم فوق الخريطة
+  const opt={paddingTopLeft:[90,115],paddingBottomRight:[window.innerWidth>720?360:40,$('tl').offsetHeight+95]};
+  anim ? map.flyToBounds(map.__bounds,{...opt,duration:.7}) : map.fitBounds(map.__bounds,opt);
+}
+map.on('click',()=>{ if(selA!==null) selectApproach(null); });
+
+/* ---------------- cars ---------------- */
+function setCars(o,want,fill,stroke,r){
+  while(o.cars.length<want){
+    const m=L.circleMarker(o.coords[0],{radius:r,color:stroke,weight:1.6,fillColor:fill,fillOpacity:1,interactive:false}).addTo(map);
+    o.cars.push({m,j:Math.random()-.5});
+  }
+  while(o.cars.length>want) o.cars.pop().m.remove();
+}
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.1,(now-last)/1000); last=now;
+  const all=[]; LAY.forEach(ly=>all.push(...ly.AP,...ly.EX));
+  all.forEach(o=>{
+    if(!o.cars.length) return;
+    o.phase=(o.phase+dt*speed/(o.period||12))%1;
+    const n=o.cars.length;
+    o.cars.forEach((c,k)=>{
+      let u=(o.phase+k/n+c.j*.35/n)%1; if(u<0)u+=1;
+      c.m.setLatLng(pointAt(o,u));
+    });
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- render ---------------- */
+const lvl=f=>`hsl(${Math.round(125*(1-Math.min(1,f)))},85%,55%)`;
+let maxV=1;
+function calcMax(){ maxV=1; F.forEach(f=>f.approaches.forEach(a=>a.vol.forEach(v=>{ if(v!=null&&v>maxV) maxV=v; }))); }
+calcMax();
+const fmtN=v=>v==null?'–':Math.round(v).toLocaleString('en-US');
+
+// الشيتات اللي بتغطي الوقت الحالي (الأساسي + أي شيت تاني متزامن معاه)
+function activeSet(){
+  const p=cur(), Tc=p.times[sel.i]+p.dur[sel.i]*500, out=[{fi:sel.f,i:sel.i}];
+  if(SW.tog){
+    const seen=new Set([p.jkey]);                 // نفس التقاطع مرتين = نرسمه مرة واحدة
+    F.forEach((g,gi)=>{
+      if(gi===sel.f || seen.has(g.jkey)) return;
+      const j=nearest(g,Tc); if(j==null) return;
+      seen.add(g.jkey); out.push({fi:gi,i:j});
+    });
+  }
+  return out;
+}
+
+function render(){
+  const act=activeSet();
+  ACT=new Map(act.map(a=>[a.fi,a.i]));
+  syncLayers(act);
+  if(selA!==null){
+    if(!(ACT.has(selFi) && F[selFi].aById[selA])){
+      const hit=act.find(a=>F[a.fi].aById[selA]);
+      if(hit) selFi=hit.fi; else { selA=null; selFi=null; }
+    }
+  }
+  LAY.forEach((ly,fi)=>drawFile(ly,F[fi],ACT.get(fi)));
+  renderSide(act);
+  renderHead();
+  updateTimeline();
+}
+
+function drawFile(ly,f,i){
+  const hasSel = selA!==null && ly.fi===selFi;
+
+  // approaches
+  ly.AP.forEach(o=>{
+    const a=f.aById[o.id]; const v=a?a.vol[i]:null;
+    const isSel = hasSel && selA===o.id, dim = hasSel && !isSel;
+    o.line.setStyle({opacity:dim?.2:1, weight:isSel?7.5:5.5, color:isSel?'#5b8cff':'#3b5bdb'});
+    o.casing.setStyle({opacity:dim?.12:.6});
+    o.period=Math.max(5,((a&&a.tt[i])||40)*.3);
+    setCars(o, (dim||v==null)?0:Math.min(90,Math.round(v/DIV)), '#ffffff','#1e3a8a',4.5);
+    const col=lvl((v||0)/maxV);
+    let tbl='';
+    if(isSel && SW.box){
+      const rows=(f.exByA[o.id]||[]).map(e=>({e,p:e.pct[i],v:e.vol[i]})).sort((x,y)=>(y.p??-1)-(x.p??-1));
+      const any=rows.some(r=>r.p!=null||r.v!=null);
+      tbl = (any ? `<div class="tbl"><span class="th">${t('appN')}</span><span class="th">${t('exit')}</span><span class="th e">${t('ratio')}</span><span class="th e">${t('volExit')}</span>`+
+        rows.filter(r=>r.p!=null||r.v!=null).map(r=>`<span>${a.raw}</span><span>${r.e.raw}</span><span class="p">${fmtR(r.p)}</span><span class="v">${fmtR(r.v)}</span>`).join('')+`</div>`
+        : `<div class="tnote">${t('noTurn')}</div>`)
+        + `<div class="thint">${SW.ex?t('exOn'):t('exHint')}</div>`;
+    }
+    const big = isSel && SW.box;
+    const tr = big ? `translate(calc(-50% + ${o.off[0]*1.5}px),calc(-50% + ${o.off[1]*2.6}px))` : `translate(calc(-50% + ${o.off[0]}px),calc(-50% + ${o.off[1]}px))`;
+    o.marker.setIcon(L.divIcon({className:'',iconSize:[0,0],html: dim ? '' :
+      `<div class="lblwrap"><div class="lbl ${isSel?'sel':''} ${isSel&&!SW.box?'cmp':''}" dir="${lang==='ar'?'rtl':'ltr'}" style="transform:${tr}">
+         <b>${a?nm(a):''}</b><span class="cnt" style="background:${col}"><i>${t('vol')}</i> ${v==null?'–':fmtN(v)}</span>${tbl}</div></div>`}));
+  });
+
+  // exits
+  const entries = hasSel ? (f.exByA[selA]||[]) : [];
+  const byE = new Map(entries.map(e=>[e.eid,e]));
+  const hideM = x=>{ if(map.hasLayer(x.marker)) map.removeLayer(x.marker); };
+  ly.EX.forEach(x=>{
+    if(!hasSel){
+      x.line.setStyle({opacity:.85,weight:6,dashArray:'1 11'}); x.casing.setStyle({opacity:.45,weight:9});
+      setCars(x,0,'#fbbf24','#78350f',4); hideM(x); return;
+    }
+    const e=byE.get(x.eid);
+    if(!e){ x.line.setStyle({opacity:0}); x.casing.setStyle({opacity:0}); setCars(x,0,'#fbbf24','#78350f',4); hideM(x); return; }
+    const pct=e.pct[i], vol=e.vol[i], lit=(pct!=null&&pct>0)||(vol!=null&&vol>0);
+    if(lit){
+      x.line.setStyle({opacity:1,weight:5+Math.min(100,pct||0)/100*7,dashArray:'1 10'});
+      x.casing.setStyle({opacity:.65,weight:9+Math.min(100,pct||0)/100*7});
+      x.period=9;
+      setCars(x,Math.min(60,Math.max(1,Math.round((vol||0)/DIV))),'#fbbf24','#78350f',4.2);
+    } else {
+      x.line.setStyle({opacity:.3,weight:4,dashArray:'1 11'}); x.casing.setStyle({opacity:.15,weight:7});
+      setCars(x,0,'#fbbf24','#78350f',4);
+    }
+    // اسم الـexit فوقه + الـratio والـvolume (نفس الاسم المكتوب في البوكس)
+    if(SW.ex && (pct!=null||vol!=null)){
+      x.marker.setIcon(L.divIcon({className:'',iconSize:[0,0],html:
+        `<div class="lblwrap"><div class="elbl" dir="${lang==='ar'?'rtl':'ltr'}" style="transform:translate(calc(-50% + ${x.off[0]}px),calc(-50% + ${x.off[1]}px))">
+           <small>${e.raw}</small><b>${pct==null?'–':fmtR(pct)+'%'}</b><span>${fmtR(vol)} ${t('vol')}</span></div></div>`}));
+      if(!map.hasLayer(x.marker)) x.marker.addTo(map);
+    } else hideM(x);
+  });
+}
+
+function renderHead(){
+  const f=cur(), i=sel.i, n=ACT.size;
+  const names=[...new Set([...ACT.keys()].map(fi=>F[fi].junction))];
+  $('tTitle').textContent = names.join(' + ');
+  $('tSub').innerHTML = `<bdi>${dmy(f.times[i])}</bdi> · `+(playing? t('range')+` <bdi>${hm(f.start)} → ${hm(f.end)}</bdi>` : t('pinnedAt')+` <bdi>${hms(f.times[i])}</bdi>`)
+    + (n>1 ? ` · ${n} ${t('sheets')}` : '');
+  $('when').innerHTML = hms(f.times[i]) + `<small>${dmy(f.times[i])}</small>`;
+  $('mode').textContent = playing ? t('playing') : t('pinned');
+  $('mode').className = 'chip ' + (playing?'live':'');
+  const a = (selA!==null && selFi!==null && F[selFi]) ? F[selFi].aById[selA] : null;
+  $('apill').innerHTML = a ? `<span class="pill" dir="${lang==='ar'?'rtl':'ltr'}">${nm(a)}${n>1?' · '+F[selFi].junction:''}<button id="clrA" title="×">✕</button></span>` : '';
+  if(a) $('clrA').onclick=()=>selectApproach(null);
+}
+
+function renderSide(act){
+  const side=$('side'); side.setAttribute('dir',lang==='ar'?'rtl':'ltr');
+  const multi=act.length>1;
+  if(selA===null){
+    let h='';
+    act.forEach(({fi,i})=>{
+      const f=F[fi];
+      h+=`<h2>${multi? f.junction : t('approaches')}</h2>`;
+      f.approaches.forEach(ap=>{
+        const v=ap.vol[i], fr=(v||0)/maxV;
+        h+=`<div class="row" data-id="${ap.id}" data-fi="${fi}"><div class="top"><span>${nm(ap)}</span><span class="n">${fmtN(v)}</span></div>
+            <div class="bar"><i style="width:${Math.max(v>0?3:0,fr*100)}%;background:${lvl(fr)}"></i></div></div>`;
+      });
+    });
+    h+=`<div class="hint">${t('hintAll')}</div>
+        <div class="legend"><div><span class="sw-a"></span>${t('legA')}</div><div><span class="sw-e"></span>${t('legE')}</div>
+        <div><span class="sw-c"></span>${t('dot')} ${DIV} ${t('vph')}</div></div>`;
+    side.innerHTML=h;
+    side.querySelectorAll('.row').forEach(r=>r.onclick=()=>selectApproach(+r.dataset.id,+r.dataset.fi));
+    return;
+  }
+  const f=F[selFi], i=ACT.get(selFi), a=f.aById[selA], entries=f.exByA[selA]||[];
+  const v=a.vol[i];
+  let h=`<button class="back" id="back">${t('back')}</button>
+    <div class="dname">${nm(a)}</div>
+    ${multi?`<div class="hint">${f.junction}</div>`:''}
+    <div class="big"><b>${fmtN(v)}</b><span>${t('vol')}</span></div>
+    <div class="stats">
+      <div class="stat"><small>${t('tt')}</small><b>${fmtN(a.tt[i])} ${t('s')}</b></div>
+      <div class="stat"><small>${t('ff')}</small><b>${fmtN(a.ff[i])} ${t('s')}</b></div>
+      <div class="stat"><small>${t('delay')}</small><b>${fmtN(a.delay[i])} ${t('s')}</b></div>
+      <div class="stat"><small>${t('dot')}</small><b>${DIV} ${t('vph')}</b></div>
+    </div>
+    <h2>${t('exits')}</h2>
+    <div class="ex-head"><span style="text-align:start">${t('exit')}</span><span>${t('ratio')}</span><span>${t('volExit')}</span></div>`;
+  const rows=entries.map(e=>({e,p:e.pct[i],v:e.vol[i]})).sort((x,y)=>(y.p??-1)-(x.p??-1));
+  const any=rows.some(r=>r.p!=null||r.v!=null);
+  rows.forEach(r=>{
+    const has=r.p!=null||r.v!=null;
+    h+=`<div class="ex ${has?'':'off'}"><div class="l"><span>${r.e.raw}</span><span class="p">${fmtR(r.p)}</span><span class="v">${fmtR(r.v)}</span></div>
+        <div class="bar"><i style="width:${r.p||0}%;background:#fbbf24"></i></div></div>`;
+  });
+  if(!any) h+=`<div class="note">${t('noTurn')}</div>`;
+  side.innerHTML=h;
+  $('back').onclick=()=>selectApproach(null);
+}
+
+/* ---------------- switches ---------------- */
+function togs(){
+  const defs=[['tog','together'],['box','boxsw'],['ex','exsw']];
+  $('tgl').innerHTML=defs.map(([k,l])=>`<button class="sw ${SW[k]?'on':''}" data-k="${k}"><i></i>${t(l)}</button>`).join('');
+  $('tgl').querySelectorAll('button').forEach(b=>b.onclick=()=>{ SW[b.dataset.k]=!SW[b.dataset.k]; togs(); render(); });
+}
+
+/* ---------------- selection / playback ---------------- */
+function selectApproach(id,fi){
+  selA=id; selFi = id===null ? null : (fi!==undefined ? fi : sel.f);
+  render(); buildTimeline();
+  if(id!==null) setTimeout(()=>{
+    const el=document.querySelector('.lbl.sel'); if(!el) return;
+    const r=el.getBoundingClientRect(), m=document.getElementById('map').getBoundingClientRect();
+    const right = m.right-(window.innerWidth>720?330:12), left=m.left+60, top=m.top+14, bottom=Math.min(m.bottom-12,$('tl').getBoundingClientRect().top-10);
+    let dx=0,dy=0;
+    if(r.right>right) dx=r.right-right; else if(r.left<left) dx=r.left-left;
+    if(r.bottom>bottom) dy=r.bottom-bottom; else if(r.top<top) dy=r.top-top;
+    if(dx||dy) map.panBy([dx,dy],{animate:true,duration:.4});
+  },120);
+}
+function setPlaying(p){
+  playing=p; clearInterval(timer);
+  if(p) timer=setInterval(()=>{ sel.i=(sel.i+1)%cur().n; render(); }, 1300/speed);
+  renderHead();
+}
+function pin(fi,i){
+  sel={f:fi,i}; setPlaying(false); render(); buildTimeline();
+}
+$('mode').onclick=()=>setPlaying(!playing);
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+    const d=e.key==='ArrowRight'?1:-1; setPlaying(false);
+    sel.i=Math.min(cur().n-1,Math.max(0,sel.i+d)); render();
+  }
+});
+
+/* ---------------- timeline ---------------- */
+let SC=null, trackEls=[];
+function buildScale(W){
+  const iv=[]; F.forEach(f=>f.times.forEach((tm,i)=>iv.push([tm,tm+f.dur[i]*1000])));
+  iv.sort((a,b)=>a[0]-b[0]);
+  const segs=[];
+  iv.forEach(([s,e])=>{ const l=segs[segs.length-1]; if(l && s-l.e<=45*60e3) l.e=Math.max(l.e,e); else segs.push({s,e}); });
+  const BRK=40, tot=segs.reduce((p,c)=>p+(c.e-c.s),0), k=(W-4-BRK*(segs.length-1))/tot;
+  let x=2; segs.forEach(sg=>{ sg.x0=x; sg.x1=x+(sg.e-sg.s)*k; x=sg.x1+BRK; });
+  const xOf=tm=>{ let sg=segs.find(s=>tm>=s.s&&tm<=s.e); if(!sg) sg=segs.reduce((b,s)=>Math.abs(tm-s.s)<Math.abs(tm-b.s)?s:b,segs[0]); return sg.x0+(Math.min(Math.max(tm,sg.s),sg.e)-sg.s)*k; };
+  const tOf=px=>{ const sg=segs.find(s=>px>=s.x0-2&&px<=s.x1+2); return sg? sg.s+(px-sg.x0)/k : null; };
+  return {segs,k,BRK,W,xOf,tOf};
+}
+function cellState(fi,i){
+  const f=F[fi]; let v;
+  if(selA!==null){ const a=f.aById[selA]; if(!a) return 'na'; v=a.vph[i]; }
+  else { v=0; let any=false; f.approaches.forEach(a=>{ if(a.vph[i]!=null){any=true; v+=a.vph[i];} }); if(!any) return 'na'; }
+  if(v==null) return 'na';
+  return v>0 ? 'y' : 'g';
+}
+function cellValue(fi,i){
+  const f=F[fi];
+  if(selA!==null){ const a=f.aById[selA]; return a? a.vol[i] : null; }
+  let v=0,any=false; f.approaches.forEach(a=>{ if(a.vol[i]!=null){any=true;v+=a.vol[i];} }); return any?v:null;
+}
+function buildTimeline(){
+  const grid=$('grid'); grid.innerHTML='';
+  const axis=$('axis'); axis.innerHTML='';
+  // keep the axis aligned with the tracks when the scrollbar takes some width
+  const sc=$('scroll'); $('axrow').style.paddingRight=(sc.offsetWidth-sc.clientWidth+2)+'px';
+  const W=axis.clientWidth || 800;
+  SC=buildScale(W);
+  // axis ticks
+  const pxHour=3600e3*SC.k, step = pxHour<38 ? 2 : 1;
+  SC.segs.forEach((sg,si)=>{
+    const d=new Date(sg.s); d.setUTCMinutes(0,0,0); let tm=d.getTime();
+    const hours=[]; for(; tm<=sg.e; tm+=3600e3*step){ if(tm>=sg.s-1) hours.push(tm); }
+    if(!hours.length || (hours[0]-sg.s)>20*60e3) hours.unshift(sg.s);
+    hours.forEach(h=>{ const s=document.createElement('span'); s.className='tick'; s.style.left=SC.xOf(h)+'px'; s.textContent=hm(h); axis.appendChild(s); });
+    if(si<SC.segs.length-1){ const b=document.createElement('span'); b.className='brk'; b.style.left=((sg.x1+SC.segs[si+1].x0)/2)+'px'; b.textContent='⋯'; axis.appendChild(b); }
+  });
+  trackEls=[];
+  F.forEach((f,fi)=>{
+    const nameEl=document.createElement('div'); nameEl.className='tl-name'; nameEl.title=f.name+'.xlsx\n'+t('clickTip');
+    nameEl.innerHTML=`${f.junction}<small>${dmy(f.start)} · ${hm(f.start)} → ${hm(f.end)}</small>`;
+    nameEl.onclick=()=>{ sel={f:fi,i:0}; setPlaying(true); render(); };
+    grid.appendChild(nameEl);
+    const tr=document.createElement('div'); tr.className='tl-track'; grid.appendChild(tr);
+    SC.segs.slice(0,-1).forEach((sg,si)=>{ const c=document.createElement('div'); c.className='cut'; c.style.left=sg.x1+'px'; c.style.width=SC.BRK+'px'; tr.appendChild(c); });
+    const cells=[];
+    f.times.forEach((tm,i)=>{
+      const c=document.createElement('div'); c.className='cell '+cellState(fi,i);
+      const x=SC.xOf(tm); c.style.left=x+'px'; c.style.width=Math.max(3,f.dur[i]*1000*SC.k-1.5)+'px';
+      c.dataset.i=i; tr.appendChild(c); cells.push(c);
+    });
+    tr.onclick=e=>{
+      const r=tr.getBoundingClientRect(), tm=SC.tOf(e.clientX-r.left); if(tm==null) return;
+      const i=nearest(f,tm); if(i!=null) pin(fi,i);
+    };
+    tr.onmousemove=e=>{
+      const r=tr.getBoundingClientRect(), tm=SC.tOf(e.clientX-r.left), tip=$('tip');
+      const i = tm==null?null:nearest(f,tm);
+      if(i==null){ tip.style.display='none'; return; }
+      const v=cellValue(fi,i), a=selA!==null?f.aById[selA]:null;
+      tip.innerHTML=`<b>${f.junction}</b> · ${dmy(f.times[i])} ${hms(f.times[i])}<br>${a?nm(a):t('total')}: <b style="color:#fbbf24">${v==null?t('nodata'):fmtN(v)}</b> <small>${t('vol')}</small>`;
+      tip.style.display='block'; tip.style.left=Math.min(window.innerWidth-220,e.clientX+14)+'px'; tip.style.top=(e.clientY-58)+'px';
+    };
+    tr.onmouseleave=()=>$('tip').style.display='none';
+    trackEls.push({tr,cells,nameEl});
+  });
+  { // شيل أي وقت قريب أوي من اللي قبله عشان ما يتداخلوش
+    let lastX=-1e9;
+    [...axis.querySelectorAll('.tick')].sort((a,b)=>parseFloat(a.style.left)-parseFloat(b.style.left))
+      .forEach(el=>{ const x=parseFloat(el.style.left); if(x-lastX<40) el.remove(); else lastX=x; });
+  }
+  const mk=document.createElement('div'); mk.className='axmark'; mk.id='axmark'; axis.appendChild(mk);
+  // playhead overlay
+  const pw=document.createElement('div'); pw.id='playwrap'; grid.appendChild(pw);
+  const ph=document.createElement('div'); ph.id='play'; pw.appendChild(ph);
+  updateTimeline(true);
+  lastF=-1; updateTimeline();
+  setTimeout(()=>{ document.documentElement.style.setProperty('--tlh',($('tl').offsetHeight+32)+'px'); map.invalidateSize(); },30);
+}
+function nearest(f,tm){
+  let best=null,bd=1e18;
+  f.times.forEach((x,i)=>{ const c=x+f.dur[i]*500, d=Math.abs(tm-c); if(d<bd){bd=d;best=i;} });
+  // ignore clicks inside long gaps (no data)
+  return bd <= Math.max(f.dur[best]*600, 4*60e3) ? best : null;
+}
+let lastF=-1;
+function updateTimeline(){
+  if(!SC) return;
+  trackEls.forEach((o,fi)=>{
+    o.nameEl.classList.toggle('cur',fi===sel.f);
+    o.nameEl.classList.toggle('act',fi!==sel.f && ACT.has(fi));      // شيتات متزامنة معروضة معاه
+    o.cells.forEach((c,i)=>c.classList.toggle('sel',ACT.get(fi)===i));
+  });
+  const f=cur(), x=SC.xOf(f.times[sel.i]+f.dur[sel.i]*500);
+  const pw=$('playwrap'), grid=$('grid'), first=trackEls[0];
+  if(pw && first){
+    const g=grid.getBoundingClientRect(), r=first.tr.getBoundingClientRect(), last=trackEls[trackEls.length-1].tr.getBoundingClientRect();
+    pw.style.left=(r.left-g.left)+'px'; pw.style.top=(r.top-g.top-2)+'px';
+    pw.style.height=(last.bottom-r.top+4)+'px'; pw.style.width=r.width+'px';
+    $('play').style.left=x+'px';
+    const mk=$('axmark'); if(mk) mk.style.left=x+'px';
+  }
+  if(sel.f!==lastF && trackEls[sel.f]){          // الصف الحالي يظهر لو كان برّه نطاق السكرول
+    lastF=sel.f;
+    const sc=$('scroll'), s=sc.getBoundingClientRect(), r=trackEls[sel.f].tr.getBoundingClientRect();
+    if(r.top<s.top) sc.scrollTop+=r.top-s.top-4; else if(r.bottom>s.bottom) sc.scrollTop+=r.bottom-s.bottom+4;
+  }
+}
+
+/* ---------------- chrome ---------------- */
+function chips(){
+  $('spChips').innerHTML=[.5,1,2,4].map(s=>`<button class="chip ${speed===s?'on':''}" data-s="${s}">${s}×</button>`).join('');
+  $('spChips').querySelectorAll('button').forEach(b=>b.onclick=()=>{ speed=+b.dataset.s; chips(); if(playing) setPlaying(true); });
+}
+function applyLang(){
+  document.documentElement.lang=lang;
+  const rtl=lang==='ar'?'rtl':'ltr';
+  ['title','tl .tl-h'].forEach(()=>{});
+  $('title').setAttribute('dir',rtl); document.querySelector('#tl .tl-h').setAttribute('dir',rtl);
+  $('tSpeed').textContent=t('speed');
+  $('lg').innerHTML=`<span><i class="y"></i>${t('yes')}</span><span><i class="g"></i>${t('no')}</span><span><i class="h"></i>${t('nodata')}</span>`;
+  $('bEn').classList.toggle('on',lang==='en'); $('bAr').classList.toggle('on',lang==='ar');
+  buildMapChips(); chips(); togs(); render(); buildTimeline();
+}
+$('bEn').onclick=()=>{lang='en'; applyLang();};
+$('bAr').onclick=()=>{lang='ar'; applyLang();};
+
+let rz; window.addEventListener('resize',()=>{ clearTimeout(rz); rz=setTimeout(()=>{ buildTimeline(); fit(false); },150); });
+
+setStyle('sat');
+applyLang();
+setPlaying(true);
+const refit=()=>{ buildTimeline(); fit(false); };
+setTimeout(refit,300); setTimeout(refit,1000);
+</script>
+</body>
+</html>
